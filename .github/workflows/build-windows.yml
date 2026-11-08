@@ -39,6 +39,7 @@ jobs:
               throw "$configuration build failed with exit code $LASTEXITCODE"
             }
           }
+          & .\tests\run-tests.ps1
 
       - name: Set version
         id: version

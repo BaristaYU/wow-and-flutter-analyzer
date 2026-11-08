@@ -29,7 +29,9 @@ values are an example from one measurement, not a performance target.
   **0.1-second intervals while the signal is valid**. Its one-second values use
   a rolling window independent of the display update.
 - **Save wave** writes the unweighted demodulated half-period error to
-  `WFGUI_wave.dat`: headerless, signed 16-bit data, rather than a WAV recording.
+  `WFGUI_wave.dat`: headerless, little-endian **signed 32-bit** data, rather than
+  a WAV recording. Out-of-range values saturate instead of wrapping sign.
+  `WFGUI_wave.meta.json` identifies the format and reference frequency.
 - **Folder...** selects the output directory and remembers it between launches.
 
 ## Requirements and connection
@@ -93,7 +95,13 @@ JIS performance.
 | File | Contents |
 | --- | --- |
 | `WFGUI_log.txt` | Comment lines beginning with `#`, followed by a CSV header and six numeric columns. Invalid/startup blocks are omitted, and rolling values are initially blank. |
-| `WFGUI_wave.dat` | Raw, little-endian, signed 16-bit mono half-period error samples. No WAV header and no original audio. Import at 6000 Hz for a 3000 Hz reference, or 6300 Hz for 3150 Hz, as nominal rates. |
+| `WFGUI_wave.dat` | Raw, little-endian, signed 32-bit mono half-period error samples, at the original scale of 0.1 ns per count. No WAV header and no original audio. Import at 6000 Hz for a 3000 Hz reference, or 6300 Hz for 3150 Hz, as nominal rates. |
+| `WFGUI_wave.meta.json` | Companion format information: version 2, signed-int32-le, four bytes per sample, reference frequency, units, and saturation policy. Keep it with the `.dat` file. |
+
+**Older captures used signed 16-bit data with the same `.dat` filename.** They
+must still be imported as 16-bit. The new version-2 metadata identifies 32-bit
+captures; file size alone cannot distinguish the two formats. See the format
+reference before opening an archived capture.
 
 See [Measurement output formats](docs/MEASUREMENT_FORMAT.md) for exact columns,
 units, timing, raw-data import settings, and limitations. Filenames and formats
@@ -126,12 +134,23 @@ The Windows workflow builds Release and Debug on pull requests and pushes to
 `v*` tag workflow also publishes a GitHub Release. Historical ZIP binaries are
 available through Git history rather than kept in the current source tree.
 
+From **Developer PowerShell for VS 2022**, run the raw-format regression tests:
+
+```powershell
+.\tests\run-tests.ps1
+```
+
+These check values beyond the old 16-bit limits, 32-bit saturation and non-finite
+inputs, exact little-endian file bytes, and metadata for both reference tones.
+The workflow runs the same tests after building the application.
+
 ## Repository layout
 
 - `wfgui.sln`, `wfgui.vcxproj`, `wfgui.vcxproj.filters`: Visual Studio project.
 - Root `*.cpp`, `*.h`, `filters.c`: application, controls, and signal processing.
 - `wfgui.rc`, `resource.h`, `res/`: dialogs, icons, and bitmap resources.
 - `docs/MEASUREMENT_FORMAT.md`: current capture and CSV format reference.
+- `tests/`: raw capture conversion, byte format, and metadata regression tests.
 - `.github/workflows/build-windows.yml`: Windows build and artifact workflow.
 
 The source files stay in their original locations to preserve the project
@@ -147,12 +166,15 @@ is still referenced by the resource script and is retained as well.
 | Signal too low / no useful reading | Feed the right input (Scarlett Input 2), check gain, Windows input/privacy settings, and the selected reference tone. |
 | Format not supported / capture cannot start | The selected Windows device must support 44.1 kHz, 16-bit stereo. This build cannot fall back to mono or ASIO. |
 | Cannot write to selected output folder | Choose an existing writable folder. The current build uses multibyte paths; try a simple ASCII folder name if a path fails. |
+| Raw capture write failed | The raw file could not accept a complete sample. Raw saving stops; the meter and CSV measurement continue. Check available storage and start a new capture in a writable folder. |
 | No log rows yet | Save log must be selected before Start. Startup and invalid blocks are skipped; one-second fields require ten consecutive valid blocks. |
 | Filter stays disabled after Stop | Existing UI limitation: restart the application to choose another filter. The folder picker is enabled again after Stop. |
 
-The raw capture uses an unchecked 16-bit conversion, so large period errors can
-exceed its range. Dropouts also interrupt its sample timeline. Use it for
-diagnostics with a stable tone; see the format reference before interpreting it.
+The raw capture uses guarded 32-bit conversion. The values -2147483648 and
+2147483647 flag saturated/invalid samples and must not be treated as ordinary
+measurement values. Dropouts still interrupt its sample timeline. The wider
+storage range keeps the original 0.1 ns scale and does not change the frequency,
+RMS, quasi-peak, or CSV calculations. See the format reference before analysis.
 The About box retains the original version 3.0 and author credit; it is not a
 release number for this fork.
 
