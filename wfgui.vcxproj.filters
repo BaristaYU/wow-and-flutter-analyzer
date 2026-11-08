@@ -55,10 +55,22 @@
     <ClInclude Include="Fourier.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="LedButton.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="MemDC.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="MemoryDC.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="OScopeCtrl.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Resource.h">
+    <ClInclude Include="resource.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="SpectrumGraph.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="StdAfx.h">
@@ -75,13 +87,10 @@
     <Image Include="res\greenButton.bmp">
       <Filter>Resource Files</Filter>
     </Image>
-    <Image Include="..\..\..\hardware\tape.bmp">
+    <Image Include="res\tape.bmp">
       <Filter>Resource Files</Filter>
     </Image>
     <Image Include="res\tape.ico">
-      <Filter>Resource Files</Filter>
-    </Image>
-    <Image Include="res\wfgui.ico">
       <Filter>Resource Files</Filter>
     </Image>
   </ItemGroup>
@@ -89,8 +98,9 @@
     <None Include="res\wfgui.rc2">
       <Filter>Resource Files</Filter>
     </None>
+    <None Include="docs\MEASUREMENT_FORMAT.md" />
   </ItemGroup>
   <ItemGroup>
-    <Text Include="ReadMe.txt" />
+    <Text Include="README.md" />
   </ItemGroup>
 </Project>

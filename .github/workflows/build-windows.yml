@@ -12,38 +12,33 @@ permissions:
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: windows-2022
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install VS Build Tools (VC++ + MFC/ATL)
+      - name: Build (Release and Debug | Win32)
         shell: pwsh
         run: |
-          $exe = "$env:RUNNER_TEMP\vs_buildtools.exe"
-          Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vs_buildtools.exe" -OutFile $exe -UseBasicParsing
-
-          $args = @(
-            "--quiet", "--wait", "--norestart", "--nocache",
-            "--add", "Microsoft.VisualStudio.Workload.VCTools",
-            "--add", "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
-            "--add", "Microsoft.VisualStudio.Component.VC.ATLMFC"
-          )
-          $proc = Start-Process -FilePath $exe -ArgumentList $args -Wait -PassThru
-          Write-Host "vs_buildtools exit code: $($proc.ExitCode)"
-          # 3010 = success, reboot required (fine under --norestart in CI)
-          if ($proc.ExitCode -ne 0 -and $proc.ExitCode -ne 3010) {
-            throw "vs_buildtools.exe failed with exit code $($proc.ExitCode)"
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $installation = & $vswhere -latest -products * -version '[17.0,18.0)' `
+            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+            -property installationPath
+          if (-not $installation) {
+            throw 'Visual Studio 2022 with the C++ tools was not found.'
           }
-
-      - name: Build (Release|Win32)
-        shell: cmd
-        run: |
-          call "%ProgramFiles(x86)%\Microsoft Visual Studio\2022\BuildTools\Common7\Tools\VsDevCmd.bat" -arch=x86 -host_arch=x64
-          if errorlevel 1 exit /b 1
-          for /f "delims=" %%i in ('dir /b "%VCINSTALLDIR%Tools\MSVC"') do set VCTOOLSVER=%%i
-          msbuild wfgui.vcxproj /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v143 /p:VCToolsVersion=%VCTOOLSVER% /p:WindowsTargetPlatformVersion=10.0 /m
+          & "$installation\Common7\Tools\Launch-VsDevShell.ps1" -Arch x86 -HostArch amd64 -SkipAutomaticLocation
+          if (-not (Test-Path "${env:VCToolsInstallDir}atlmfc\include\afxwin.h")) {
+            throw 'Install C++ MFC for the selected v143 build tools.'
+          }
+          $msbuild = Join-Path $installation 'MSBuild\Current\Bin\MSBuild.exe'
+          foreach ($configuration in @('Release', 'Debug')) {
+            & $msbuild wfgui.vcxproj /t:Rebuild /p:Configuration=$configuration /p:Platform=Win32 /m
+            if ($LASTEXITCODE -ne 0) {
+              throw "$configuration build failed with exit code $LASTEXITCODE"
+            }
+          }
 
       - name: Set version
         id: version
@@ -59,9 +54,9 @@ jobs:
       - name: Rename binary with version
         shell: pwsh
         run: |
-          $exe = Get-ChildItem -Path Release -Filter *.exe | Select-Object -First 1
+          $exe = Get-Item -LiteralPath Release/wfgui.exe
           $newName = "$($exe.BaseName)-${{ steps.version.outputs.version }}$($exe.Extension)"
-          Rename-Item -Path $exe.FullName -NewName $newName
+          Rename-Item -LiteralPath $exe.FullName -NewName $newName
           Write-Host "Renamed to $newName"
 
       - name: Upload build artifact

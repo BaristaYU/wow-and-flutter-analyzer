@@ -1,288 +1,173 @@
 # Wow & Flutter Analyzer (WFGUI)
 
-A software wow & flutter meter for Windows. Play a 3 kHz test tape into your
-sound card and it measures your tape deck's speed accuracy and short-term speed
-stability — no hardware W&F meter required.
+Windows software for measuring tape transport speed and wow & flutter from a
+3000 Hz or 3150 Hz test tone.
 
-Originally written by **Alex Freed**, who released it as free donationware and
-[invited others to continue it](https://www.tapeheads.net/threads/version-8-of-the-wfgui.55581/post-775509961).
+This is **BaristaYU's modified fork** of
+[sibiryakov/wow-and-flutter-analyzer](https://github.com/sibiryakov/wow-and-flutter-analyzer),
+originally written by **Alex Freed**. It retains the original meter and adds
+Scarlett Solo Input 2 support, a speed error display, measurement logging, and an
+output folder picker. This README describes the source in this fork.
 
-![WFGUI main window](docs/wf-meter-ui.png)
+![WFGUI measuring a tape test tone through the right input](docs/wfgui-running.jpg)
 
----
+Live tape playback with a 3150 Hz reference and DIN weighting. The displayed
+values are an example from one measurement, not a performance target.
+
+## Features
+
+- Captures **44.1 kHz, 16-bit stereo PCM** through the Windows `waveIn` API and
+  measures the **right channel only**. On a Scarlett Solo 3rd Gen stereo input
+  pair, this corresponds to **Input 2**. The left channel is ignored.
+- Selects the Windows input device using its device ID, including when the list
+  is sorted alphabetically.
+- Supports 3000 Hz and 3150 Hz reference tones, with Unweighted, DIN, Wow, and
+  Flutter filter choices.
+- Displays frequency, signed speed error, RMS, a quasi-peak needle, a deviation
+  graph, and the legacy 10-second maximum summary.
+- **Save log** writes comma-separated measurements to `WFGUI_log.txt` at
+  **0.1-second intervals while the signal is valid**. Its one-second values use
+  a rolling window independent of the display update.
+- **Save wave** writes the unweighted demodulated half-period error to
+  `WFGUI_wave.dat`: headerless, signed 16-bit data, rather than a WAV recording.
+- **Folder...** selects the output directory and remembers it between launches.
+
+## Requirements and connection
+
+- Windows with an input device that accepts 44.1 kHz / 16-bit / stereo capture.
+- A tape with a known **3000 Hz or 3150 Hz** test tone and a cable suitable for
+  the deck output and interface input.
+- For Scarlett Solo 3rd Gen: connect the deck output to **Input 2**, use its
+  line-input setting (INST off), and select the Scarlett stereo recording device
+  in WFGUI. Input 1 alone will not feed this build's measurement channel.
+  See the [Focusrite hardware guide](https://userguides.focusrite.com/hc/en-gb/articles/23031457294610-Scarlett-Solo-3rd-Gen-hardware-features)
+  for the Input 2 line/instrument switch.
+
+There is no ASIO backend, mono fallback, channel selector, or channel mixing.
+The right-channel mapping depends on how the driver exposes the stereo pair.
+Confirm it with only Input 2 connected. Use the corresponding right input on
+other interfaces.
 
 ## Quick start
 
-1. Connect **deck line out → PC line in** with an RCA-to-3.5 mm cable
-   ([like this one](docs/IMG_3288.jpeg)). **Plug it in before launching** — on
-   many machines the input only exists once a jack is inserted, and WFGUI exits
-   with *"NO Input Devices Found.."* if it sees none.
-2. Launch, and pick your input in the top-left dropdown.
-3. Select **3000 Hz** or **3150 Hz** to match your test tape.
-4. Select the weighting — **`DIN` for a standard measurement**. Set it *before*
-   pressing Start; it locks while running.
-5. Press **Start** and play the tape. Adjust level until the LED stays green.
+1. Connect and enable the interface before launching `wfgui.exe`.
+2. Select the correct **Input** device and the **3000 Hz** or **3150 Hz** reference
+   matching the test tape.
+3. Choose a filter. `DIN` is the initial selection; choose the setting appropriate
+   for the reading you intend to compare.
+4. Click **Folder...** and choose a writable directory if saving measurements.
+   Initially, the application uses the directory containing the executable.
+5. Check **Save log**, **Save wave**, or both **before pressing Start**.
+6. Press **Start** and play the tape. Adjust the input gain for a clear signal
+   without overloading the interface. The green indicator marks accepted signal
+   blocks. Frequency must be within approximately 5% of the selected reference.
+7. Press **Stop** to finish and close the output files before opening or copying
+   them.
 
-You now have three numbers: **Frequency** (speed), **RMS (%)**, and the needle
-(**quasi-peak**). Which one to quote depends on the standard — see
-[Matching manufacturer specs](#matching-manufacturer-specs).
-
-## What you need
-
-| | |
-|---|---|
-| **Test tape** | A **3.00 kHz** or **3.15 kHz** tone. This is essential — a 1 kHz tone will not work. |
-| **Line input** | Line in preferred; mic in works but is noisier. Many modern PCs have no line input at all — a cheap USB interface solves it. |
-| **Cable** | RCA → 3.5 mm stereo. |
-| **Windows** | Also runs under Wine on Linux/macOS — see [Building & running](#building--running). |
-
-Your deck must be within **±5% of nominal speed** or the meter will not read at
-all.
-
-**Which channel gets measured.** WFGUI asks Windows for a fixed 44.1 kHz /
-16-bit / **mono** stream and does no channel selection or mixing of its own — it
-never sees a stereo signal to choose from. What lands in that mono stream is
-therefore up to your sound card's driver: most commonly the **left** channel,
-though some devices sum left and right instead.
-
-In practice this means **feed the channel you want to measure into the left
-input**. If you need to be sure which one you are getting, play the tape with
-only one channel connected and check that the Frequency box still reads — then
-swap. It matters more than it sounds: a deck can have measurably different W&F
-on its two channels, and summing two channels of an azimuth-misaligned deck can
-partially cancel the very modulation you are trying to measure.
-
-## What wow & flutter actually is
-
-If transport speed varies, pitch varies — so wow & flutter is **frequency
-modulation of the recorded tone**. Measuring it means recovering that modulation
-and metering it.
-
-- **Wow** — variation below ~6 Hz, from large rotating parts.
-- **Flutter** — variation above ~6 Hz, from small ones.
-
-A part rotating *n* times per second produces a component at *n* Hz. That fact is
-what makes the [spectrum analysis](#finding-the-guilty-part) below able to name
-the failing component.
-
-The percentage is the frequency deviation as a proportion of the carrier: at
-3 kHz, **0.1% = 3 Hz deviation**.
+**Each Start replaces the selected output files in that folder.** Copy or rename
+a capture before starting the next one. There are no automatic numbered copies.
 
 ## Reading the display
 
-| Element | Meaning |
-|---|---|
-| **Frequency** | Measured carrier, updated once per second → **tape speed** |
-| **RMS (%)** | RMS over the last 1 second |
-| Needle / **Peak** | Live quasi-peak, ~1 s decay (the DIN-style ballistic) |
-| **Max in 10 sec … RMS … quasi-peak** | Maxima of both over a rolling 10 s window |
-| Weighting dropdown | `Unweighted` · `DIN` · `Wow` · `Flutter` |
-| **Range** 0.1 / 0.4 / 1 / 4% | Full-scale for graph and needle — display only |
-| Green LED | Lit only while the signal is valid |
-| Deviation graph | Instantaneous weighted deviation, in % |
+| Display or control | Meaning |
+| --- | --- |
+| Frequency | Carrier estimate, refreshed after ten accepted 0.1-second blocks (about once per second with continuous signal). |
+| Signed percentage beside Frequency | Speed error: `(frequency / reference - 1) * 100`. Positive is fast; negative is slow. |
+| RMS (%) | RMS deviation after the selected filter, refreshed with the frequency display. |
+| Needle | Quasi-peak estimate after the selected filter. |
+| Max in 10 sec | Legacy RMS / quasi-peak maximum summary. Rejected blocks can extend its history beyond ten elapsed seconds. |
+| Range: 0.1 / 0.4 / 1 / 4% | Display range for the graph and needle. |
+| Filter | Unweighted, DIN, Wow, or Flutter. This affects the meter and logged deviation values, but not the raw capture. |
 
-**Speed error** is simply the frequency reading against nominal:
+For example, 3134.25 Hz with a 3150 Hz reference is **-0.50%** speed error.
+The CSV's frequency and RMS windows move every 0.1 seconds, so its rows need not
+match the less frequently refreshed display exactly.
 
-```
-speed error % = (displayed frequency / nominal − 1) × 100
-```
+RMS and quasi-peak are different readings. A filter named `DIN` does not by
+itself establish compliance with a measurement standard. Compare like settings,
+detectors, and test tapes; this fork does not claim certified DIN, IEC, NAB, or
+JIS performance.
 
-In the screenshot above: 3105.4 Hz against 3150 Hz nominal = **−1.42%**, a deck
-running slow.
+## Saved measurements
 
-> The `DIN` entry names the **weighting curve**, not the detector — it is the
-> standard ~4 Hz-peaked curve used by *all* the standards. `Wow` and `Flutter`
-> restrict the measurement to one band each; they are diagnostics, not standard
-> readings.
+| File | Contents |
+| --- | --- |
+| `WFGUI_log.txt` | Comment lines beginning with `#`, followed by a CSV header and six numeric columns. Invalid/startup blocks are omitted, and rolling values are initially blank. |
+| `WFGUI_wave.dat` | Raw, little-endian, signed 16-bit mono half-period error samples. No WAV header and no original audio. Import at 6000 Hz for a 3000 Hz reference, or 6300 Hz for 3150 Hz, as nominal rates. |
 
-## Matching manufacturer specs
+See [Measurement output formats](docs/MEASUREMENT_FORMAT.md) for exact columns,
+units, timing, raw-data import settings, and limitations. Filenames and formats
+from upstream builds (`log.txt`, `WF_out.wav`, or `WF_out.dat`) do not describe
+the output of this fork.
 
-Most people are here to compare against a spec sheet. The standards differ only
-in **detector and time constant** — the weighting curve is the same in all of
-them:
+## Build on Windows
 
-| Standard | Detector | Reads |
-|---|---|---|
-| **IEC / DIN / CCIR** | weighted peak | highest |
-| **NAB** | unweighted rms | lower |
-| **JIS** (a.k.a. **WRMS**) | weighted rms, slow | lowest |
+Install **Visual Studio 2022** or its Build Tools with:
 
-WFGUI computes both detectors at once, so the standard you get is determined by
-the weighting you select plus **which number you read**:
+- Desktop development with C++ and the **MSVC v143 x86/x64** tools.
+- **C++ MFC for latest v143 build tools (x86 & x64)**, including ATL support.
+- An installed Windows 10 or Windows 11 SDK.
 
-| Spec is quoted as | Set weighting to | Read |
-|---|---|---|
-| **DIN / IEC / CCIR** | `DIN` | the needle / quasi-peak |
-| **WRMS / JIS** | `DIN` | the **RMS (%)** box |
-| **NAB / unweighted RMS** | `Unweighted` | the **RMS (%)** box |
+Open `wfgui.sln`, choose **Release | Win32**, and build. Alternatively, from a
+**Developer PowerShell / Developer Command Prompt for VS 2022** in this folder:
 
-Expect **DIN to read roughly 2–3× the WRMS figure** for the same machine. If a
-spec sheet's number looks impossibly good, check which standard it is in — JIS
-weighting was often chosen precisely because it flattered the result.
-
-**Before trusting a comparison:**
-
-- **The test tape dominates the result.** Absolute numbers mean little unless the
-  same tape is used throughout. On an excellent deck the tape may well be the
-  worse of the two.
-- Manufacturers quote hand-picked, carefully adjusted samples.
-- Many specs are **2-sigma** (the value exceeded only 5% of the time). WFGUI has
-  no 2-sigma mode, and its 10-second *maximum* will read higher than one.
-- JIS's "slow" detector is approximated here by a 1-second RMS.
-
-## Getting trustworthy numbers
-
-- **Measure your noise floor first.** Generate a 3 kHz tone on the PC, loop it
-  from output back to input, and measure. That is your rig's floor — anything
-  near it is your sound card, not your deck. A clean setup reaches ~0.0025% RMS,
-  against ~0.04–0.05% for a good cassette deck.
-- **Measure at the beginning, middle and end of the tape.** W&F varies
-  considerably along a cassette.
-- **Never measure in simultaneous record-reproduce (3-head) mode.** The
-  record-to-replay head delay creates a comb filter that makes the measurement
-  blind to flutter at certain frequencies, giving falsely low readings. Record,
-  rewind, *then* play back.
-- Speed error and W&F are measured together, from the same pass.
-
-## Advanced
-
-### Logging along the whole tape
-
-Ticking **Save log** before Start writes `log.txt` once per second — three
-space-separated columns: **frequency**, **1-second RMS**, **max quasi-peak over
-the last 10 s**. Open Excel first, then File → Open → Text Files (switching the
-filter off `*.xls`), and it parses into three columns.
-
-Plotting those against time across a full cassette is the single best view of a
-transport's health — it will show a stretched belt, a failing idler, or a deck
-that drifts as the tape pack changes.
-
-> **Known limitation:** the *Save log* checkbox is **not wired up in this
-> source** — the underlying flag is never set, so a binary built from this
-> repository never writes `log.txt`. The released v8 binary
-> (`wfgui_8_60.zip`, included here) does log correctly. A fix is tracked
-> separately.
-
-### Finding the guilty part
-
-Ticking **Save wave** writes `WF_out.wav` — the demodulator's raw output, which
-is what you run a spectrum analysis on to work out *which part* is at fault.
-
-It is an ordinary WAV file, so **just open it**: Audacity, or any editor, reads
-the sample rate and width from the header. Nothing to configure.
-
-**What is actually stored**
-
-| | |
-|---|---|
-| Quantity | half-period error: `10 × (nominal − measured)`, in nanoseconds |
-| One count | 0.1 ns of half-period error |
-| Sign | **positive = running fast** (measured half-period shorter than nominal) |
-| Format | WAV, **32-bit** signed PCM, **mono** |
-| Sample rate | **2 × carrier** — **6000 Hz** for a 3000 Hz tone, **6300 Hz** for 3150 Hz |
-
-It is **not** a frequency, and **not** a percentage. To convert a count to the
-percentage the meter displays, divide by the nominal half-period in nanoseconds
-over ten:
-
-```
-W&F %  =  count ÷ 15873      (3150 Hz tone)
-W&F %  =  count ÷ 16667      (3000 Hz tone)
+```powershell
+msbuild wfgui.vcxproj /t:Rebuild /p:Configuration=Release /p:Platform=Win32 /m
 ```
 
-**Two properties worth understanding**
+The executable is `Release/wfgui.exe`. Debug builds use `Debug/wfgui.exe`.
+The project defaults to **v143** and SDK **10.0 (latest installed version)**,
+so no specific old SDK needs to be installed. It targets Win32 and links MFC and
+the C runtime statically. Keep the application in a writable location or select
+a writable measurement folder.
 
-- **It is written before the weighting filter.** The contents do not depend on
-  the dropdown — DIN, Wow, Flutter and Unweighted all produce an identical file.
-  That matters, because the weighting curves are deliberately lossy: DIN peaks at
-  4 Hz and rolls off hard either side, and `Wow` discards everything above 6 Hz
-  outright. Analysing a weighted signal would mean hunting for a fault in data
-  that had already thrown the evidence away. Rotating parts turn at whatever rate
-  they turn at, not at perceptually-weighted rates.
-- **The sample rate is tied to the carrier, not to audio.** One sample per zero
-  crossing, and a sine crosses zero twice per cycle — hence 2 × carrier. The
-  header records it, so this is now just a curiosity rather than something you
-  can get wrong.
+The Windows workflow builds Release and Debug on pull requests and pushes to
+`master`. Release executables are available as workflow artifacts; the existing
+`v*` tag workflow also publishes a GitHub Release. Historical ZIP binaries are
+available through Git history rather than kept in the current source tree.
 
-**Intended use — finding the faulty part**
+## Repository layout
 
-1. Open `WF_out.wav`.
-2. **Remove the DC offset first**: Effect → Normalize, with *Remove DC offset*
-   ticked. The DC component is the deck's static speed error, and left in place
-   it leaks across the low-frequency bins — which is precisely the wow band you
-   are trying to read. Normalizing the amplitude at the same time makes the trace
-   visible, since a good deck uses a tiny fraction of the available range.
-3. Analyze → Plot Spectrum, `Size: 65536`, `Axis: Log frequency`. That gives
-   ~0.1 Hz resolution and needs about 10 seconds of capture selected.
+- `wfgui.sln`, `wfgui.vcxproj`, `wfgui.vcxproj.filters`: Visual Studio project.
+- Root `*.cpp`, `*.h`, `filters.c`: application, controls, and signal processing.
+- `wfgui.rc`, `resource.h`, `res/`: dialogs, icons, and bitmap resources.
+- `docs/MEASUREMENT_FORMAT.md`: current capture and CSV format reference.
+- `.github/workflows/build-windows.yml`: Windows build and artifact workflow.
 
-Each peak is a rotating part, and its circumference follows from the tape speed:
+The source files stay in their original locations to preserve the project
+structure and make comparisons with upstream easier. Both `MemDC.h` and
+`MemoryDC.h` are used by different controls and must be retained. `res/tape.bmp`
+is still referenced by the resource script and is retained as well.
 
-```
-circumference = tape speed ÷ peak frequency
-```
+## Troubleshooting and current limitations
 
-At cassette speed (4.76 cm/s), a peak at 5 Hz is a part of roughly 0.95 cm
-circumference — enough to tell a capstan from an idler from a motor. Read the
-peaks relative to each other; take absolute W&F percentages from the meter, not
-from here.
+| Symptom | What to check |
+| --- | --- |
+| NO Input Devices Found | Connect and enable a Windows recording device before launching. |
+| Signal too low / no useful reading | Feed the right input (Scarlett Input 2), check gain, Windows input/privacy settings, and the selected reference tone. |
+| Format not supported / capture cannot start | The selected Windows device must support 44.1 kHz, 16-bit stereo. This build cannot fall back to mono or ASIO. |
+| Cannot write to selected output folder | Choose an existing writable folder. The current build uses multibyte paths; try a simple ASCII folder name if a path fails. |
+| No log rows yet | Save log must be selected before Start. Startup and invalid blocks are skipped; one-second fields require ten consecutive valid blocks. |
+| Filter stays disabled after Stop | Existing UI limitation: restart the application to choose another filter. The folder picker is enabled again after Stop. |
 
-> **Captures from older builds** are named `WF_out.dat` and are headerless,
-> signed **16-bit**. Import those with File → Import → Raw Data, choosing
-> `Signed 16-bit PCM`, `Little-endian`, `1 Channel (Mono)` and the sample rate
-> above. The count-to-percent conversion is the same — the scale did not change,
-> only the width and the container.
+The raw capture uses an unchecked 16-bit conversion, so large period errors can
+exceed its range. Dropouts also interrupt its sample timeline. Use it for
+diagnostics with a stable tone; see the format reference before interpreting it.
+The About box retains the original version 3.0 and author credit; it is not a
+release number for this fork.
 
-> Both files are written to the program's working directory, and neither
-> overwrites the previous run: if `WF_out.wav` already exists the next capture
-> becomes `WF_out_1.wav`, then `WF_out_2.wav`, and `log.txt` behaves the same
-> way. The app does not announce which name it settled on, so check the folder
-> after several runs. If the files seem to vanish entirely, see Troubleshooting.
+## Attribution and license status
 
-## Troubleshooting
+- **Alex Freed**: original WFGUI author. His copyright and donation information
+  remain in the application's About box.
+- **sibiryakov** and upstream contributors: the
+  [upstream repository](https://github.com/sibiryakov/wow-and-flutter-analyzer)
+  and its history.
+- **BaristaYU**: Scarlett Solo right-input support, interface changes, speed
+  error display, logging, and output-folder selection in this fork.
+- Individual controls retain their existing author and copyright notices.
 
-| Symptom | Cause / fix |
-|---|---|
-| **"NO Input Devices Found.."**, then exits | No input device present. Plug the cable in *before* launching. Check the machine actually has a line input; add a USB interface if not. |
-| **"Capture clipped"** in the status line | A capture sample hit the limit of its range. With 32-bit samples this needs something pathological, such as a long signal dropout stretching one measurement. The meter readings either side remain valid; the capture does not. |
-| **"Signal too low"** never clears | Input below roughly −56 dBFS. Check level and that the input is enabled in Windows sound settings and privacy settings. Most often, though, it is the next row. |
-| **Wrong input used, whatever you select** | Known bug: the dropdown is sorted alphabetically but its *position* is passed to the sound API as the *device number*, so the two disagree. **Try the other entries** until one works — the one that works may be labelled something unrelated. |
-| **Dropdown shows only one line** | The list is there but drawn one item tall. Scroll it with the **mouse wheel** or the **arrow keys**. |
-| **Weighting can't be changed** | It locks on Start and is not released on Stop. Set it before starting, or restart the app. |
-| **`log.txt` / `WF_out.wav` missing** | Written to the working directory. Under UAC, writes into `Program Files` are silently redirected to `C:\Users\<you>\AppData\Local\VirtualStore\...`. **Run it from an ordinary user-writable folder.** (For `log.txt`, also see the limitation above.) |
-| Frequency shows a value but nothing else updates | Tone is more than ±5% off nominal, or the 3000/3150 setting doesn't match the tape. |
-| Vendor audio drivers misbehaving | Uninstalling the vendor driver in favour of the generic Windows one has fixed this for Focusrite interfaces. |
-
-## Building & running
-
-Windows, Visual Studio Build Tools with the **VC++ ATL/MFC** component:
-
-```
-msbuild wfgui.vcxproj /p:Configuration=Release /p:Platform=Win32
-```
-
-CI builds this on every push and publishes the executable as an artifact; tagged
-pushes (`v*`) publish a GitHub Release. MFC and the CRT are linked statically, so
-the result is a single self-contained `.exe`.
-
-**Wine (Linux/macOS):** works, but fails *silently* if `MFC42.DLL` is missing —
-place that DLL next to the executable. `WINEDEBUG=+dll` will show what is
-missing.
-
-**Prebuilt originals** are in the repo: `wfgui_4_60.zip`, `wfgui_7_60.zip`,
-`wfgui_8_60.zip`.
-
-> This source tree's About box still reads "Version 3.0" although it carries
-> v8-era features, and it differs from the released v8 in at least one respect
-> (logging, above). Where this README describes behaviour, it describes **this
-> source**.
-
-## Credits & further reading
-
-- **Alex Freed** — original author.
-- **A.N.T.** — distributed v8 and maintained the community thread.
-- [Version 8 of the WFGUI](https://www.tapeheads.net/threads/version-8-of-the-wfgui.55581/)
-  — the tapeheads thread, the source of most practical knowledge here.
-- Bob Metzler, *Audio Measurement Handbook*, "Wow and Flutter Measurements" —
-  the standards, the weighting curve, and measurement technique.
-
-Detailed extraction notes behind this document are in [`docs/knowledge/`](docs/knowledge/).
+The original program was described as free donationware. This repository and
+upstream have **no explicit repository-wide LICENSE file**. This cleanup adds
+no new license and makes no additional redistribution permission claim. Retain
+the existing notices and consult the original rights holders for license terms.
