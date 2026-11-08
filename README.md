@@ -9,9 +9,29 @@ originally written by **Alex Freed**. It retains the original meter and adds
 Scarlett Solo Input 2 support, a speed error display, measurement logging, and an
 output folder picker. This README describes the source in this fork.
 
-![WFGUI measuring a tape test tone through the right input](docs/wfgui-running.jpg)
+## Download and run
 
-Live tape playback with a 3150 Hz reference and DIN weighting. The displayed
+**[Download WFGUI for Windows (ZIP)](https://github.com/BaristaYU/wow-and-flutter-analyzer/releases/download/v2026.11.09/WFGUI-Win32-v2026.11.09.zip)**
+
+Extract the whole ZIP and run **`wfgui.exe`**. No source build is needed.
+The package includes a short getting-started guide and the measurement format
+reference. See [Releases](https://github.com/BaristaYU/wow-and-flutter-analyzer/releases)
+for release notes and other downloads.
+
+Alternatively, use **Code > Download ZIP**, extract the source archive, and run
+**`bin/wfgui.exe`**. This repository also includes that ready-to-run Windows
+executable; its build source and checksum are recorded beside it in `bin/`.
+
+The `Source code (zip)` archive attached to release `v2026.11.09` predates the
+addition of `bin/` and contains source only. Use the Windows package above for
+that release.
+This build is unsigned; publishing it on Releases does not guarantee that browser
+or Windows download warnings disappear.
+
+![WFGUI measuring a tape test tone through the right input](docs/wfgui-running-clean.png)
+
+Live tape playback with a 3150 Hz reference and DIN weighting; only the outer
+window border is cropped. The displayed
 values are an example from one measurement, not a performance target.
 
 ## Features
@@ -145,6 +165,8 @@ inputs, exact little-endian file bytes, and metadata for both reference tones.
 The workflow runs the same tests after building the application.
 
 ## Repository layout
+
+- `bin/`: ready-to-run Windows executable, build source, and SHA-256 checksum.
 
 - `wfgui.sln`, `wfgui.vcxproj`, `wfgui.vcxproj.filters`: Visual Studio project.
 - Root `*.cpp`, `*.h`, `filters.c`: application, controls, and signal processing.
