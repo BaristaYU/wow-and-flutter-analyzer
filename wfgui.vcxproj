@@ -172,6 +172,7 @@
     <ClInclude Include="StdAfx.h" />
     <ClInclude Include="wfgui.h" />
     <ClInclude Include="wfguiDlg.h" />
+    <ClInclude Include="WaveCaptureFormat.h" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="res\greenButton.bmp" />

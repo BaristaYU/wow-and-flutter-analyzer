@@ -4,6 +4,7 @@
 #include "stdafx.h"
 #include "wfgui.h"
 #include "wfguiDlg.h"
+#include "WaveCaptureFormat.h"
 #include <afxdlgs.h>
 
 
@@ -413,7 +414,7 @@ HCURSOR CWfguiDlg::OnQueryDragIcon()
 
 
 
-short error_3150;
+WfguiWave::Sample error_3150;
 
 
 double freq,err1, err2;
@@ -430,6 +431,7 @@ int max, min,started;
 
 short sample;
 FILE *outf;
+static bool g_waveWriteFailed = false;
 //FILE *logfile;
 
 double RMS_sums[10];
@@ -643,11 +645,25 @@ void CWfguiDlg::OnButton2() // START
 
 	outf = NULL;
     fp_log = NULL;
+    g_waveWriteFailed = false;
+    bool waveMetadataOk = !m_savefile;
 
     if (m_savefile)
     {
         CString wavePath = m_saveFolder + _T("\\WFGUI_wave.dat");
         outf = fopen((LPCTSTR)wavePath, "wb");
+        if (outf != NULL)
+        {
+            CString metadataPath = m_saveFolder + _T("\\WFGUI_wave.meta.json");
+            FILE* metadata = fopen((LPCTSTR)metadataPath, "w");
+            if (metadata != NULL)
+            {
+                const int referenceHz = IsDlgButtonChecked(IDC_RADIO5) ? 3000 : 3150;
+                waveMetadataOk = WfguiWave::WriteMetadata(metadata, referenceHz);
+                if (fclose(metadata) != 0)
+                    waveMetadataOk = false;
+            }
+        }
     }
 
     if (m_log)
@@ -673,7 +689,7 @@ void CWfguiDlg::OnButton2() // START
     }
 
     // Do not start measurement if a requested file cannot be opened.
-    if ((m_savefile && outf == NULL) ||
+    if ((m_savefile && (outf == NULL || !waveMetadataOk)) ||
         (m_log && fp_log == NULL))
     {
         if (outf != NULL)
@@ -901,7 +917,7 @@ void CWfguiDlg::ProcessHeader(WAVEHDR *pHdr)
 			m_OK_LED.Depress(false);
 			return;
 		}
-		m_status = "";
+		m_status = g_waveWriteFailed ? "Raw capture write failed" : "";
 
 		m_OK_LED.Depress(true);
 
@@ -932,8 +948,7 @@ void CWfguiDlg::ProcessHeader(WAVEHDR *pHdr)
 			last_val = this_val;
 
 			if(zero_cross){
-				  error_3150 = (short)(10 * (proper_interval - interval));
-				// for 1% will be 315
+				error_3150 = WfguiWave::EncodeCounts(10 * (proper_interval - interval));
 
 		
 				if(first_buffer){
@@ -943,9 +958,14 @@ void CWfguiDlg::ProcessHeader(WAVEHDR *pHdr)
 				}
   
 				  
-				if(m_savefile)
-					if(outf > 0)
-						fwrite(&error_3150,2,1,outf);
+				if (m_savefile && outf != NULL && !WfguiWave::WriteSample(outf, error_3150))
+                {
+                    g_waveWriteFailed = true;
+                    m_status = "Raw capture write failed";
+                    m_savefile = FALSE;
+                    fclose(outf);
+                    outf = NULL;
+                }
 		
 		
 				err = (proper_interval - interval)   / proper_interval; // in %

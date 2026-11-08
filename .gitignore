@@ -25,6 +25,7 @@ ipch/
 # Measurement output (each Start replaces these files)
 WFGUI_log.txt
 WFGUI_wave.dat
+WFGUI_wave.meta.json
 
 # Editor backup / merge files
 *~
