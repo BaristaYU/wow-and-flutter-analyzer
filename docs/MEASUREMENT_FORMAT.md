@@ -9,13 +9,16 @@ This document describes the current BaristaYU fork. The implementation is in
 - Select **Folder...** before Start. The initial location is the executable's
   directory; the last selected folder is saved in the application's Windows
   profile settings.
-- **Save log** creates `WFGUI_log.txt`; **Save wave** creates `WFGUI_wave.dat`.
+- **Save log** creates `WFGUI_log.txt`; **Save wave** creates `WFGUI_wave.dat`
+  and its companion `WFGUI_wave.meta.json`.
   Select either option, or both, before Start.
 - Files open in truncate/write mode on Start. **An existing file with that name
   is overwritten**, including when the same session is restarted.
-- Stop closes the files. Copy or rename them before the next capture.
+- Stop closes the files. Copy or rename the raw data and its metadata together
+  before the next capture. The metadata is written and flushed before capture.
 - The folder picker is disabled while measuring. A failure to open a requested
-  file prevents measurement from starting and displays an error. File creation
+  file (including raw metadata) prevents measurement from starting and displays
+  an error. File creation
   is not transactional: another selected file may already have been truncated.
 
 ## CSV: `WFGUI_log.txt`
@@ -79,8 +82,10 @@ weighting filter. The audio band-pass stage still precedes demodulation.
 
 | Property | Value |
 | --- | --- |
-| Container | None: no header, metadata, or timestamps |
-| Sample type | Signed 16-bit integer, little-endian |
+| Container | None: the `.dat` file has no header or timestamps; format metadata is in the companion JSON |
+| Sample type | Signed 32-bit integer, little-endian (`signed-int32-le`) |
+| Sample width | 4 bytes; the file size is four times the number of stored samples |
+| Format version | 2, identified by `WFGUI_wave.meta.json` |
 | Channels | One |
 | Import offset | 0 bytes |
 | Nominal sample rate, 3000 Hz reference | 6000 samples/s |
@@ -92,7 +97,8 @@ The calculation is:
 
 ```text
 nominal_half_period_ns = 1e9 / (2 * reference_hz)
-count = signed_int16(10 * (nominal_half_period_ns - measured_half_period_ns))
+counts = 10 * (nominal_half_period_ns - measured_half_period_ns)
+count = signed_int32(saturate(counts, -2147483648, 2147483647))
 half_period_deviation_pct = count / (10 * nominal_half_period_ns) * 100
 ```
 
@@ -109,7 +115,7 @@ those gaps. Its duration after import need not equal elapsed capture time.
 
 ### Importing for diagnosis
 
-Use an audio editor's **Import Raw Data** command with signed 16-bit PCM,
+Use an audio editor's **Import Raw Data** command with signed 32-bit PCM,
 little-endian, mono, offset 0, and the nominal rate above. Renaming `.dat` to
 `.wav` does not add a WAV header.
 
@@ -117,10 +123,55 @@ The file includes the average half-period offset. If looking for modulation
 components, remove the DC component in a separate analysis copy. The selectable
 DIN/Wow/Flutter filter is not baked into this capture.
 
-The current implementation converts directly to a 16-bit value without a
-saturation check or clipping flag. Values outside -32768..32767 cannot be
-represented reliably. That limit is about +/-1.97% half-period deviation at
-3000 Hz, or +/-2.06% at 3150 Hz, less than the input validity range. Large speed
-offsets, acquisition transients, and dropouts can therefore make the raw file
-unsuitable for quantitative analysis. Preserve the CSV reference/filter preamble
-alongside raw files when archiving measurements.
+### Saturation and invalid samples
+
+The conversion checks the 32-bit bounds **before** casting. Finite in-range
+values retain truncation toward zero, as in the earlier format. Values above or
+below the range, including positive/negative infinity, saturate to the respective
+endpoint. NaN is stored as **-2147483648**.
+
+Treat both **-2147483648** and **2147483647** as flagged samples when analyzing a
+capture. Saturation prevents sign wrapping; it does not recover the underlying
+waveform. Do not include these endpoints as normal data in a spectrum estimate.
+Dropouts, acquisition transients, the nominal import rate, and the missing-gap
+behavior described above still require care.
+
+The larger integer extends the storage range, without changing the **0.1 ns per
+count** scale or the measurement algorithm. The meter and CSV frequency, RMS,
+and quasi-peak calculations continue to use the original floating-point path;
+they do not use the stored integer sample. A raw file write failure stops raw
+saving and displays `Raw capture write failed`, while measurement continues.
+
+### Format identification and older files
+
+Each new raw capture includes `WFGUI_wave.meta.json`, for example:
+
+```json
+{
+  "format_version": 2,
+  "data_file": "WFGUI_wave.dat",
+  "sample_format": "signed-int32-le",
+  "bytes_per_sample": 4,
+  "channels": 1,
+  "reference_hz": 3150,
+  "nominal_sample_rate_hz": 6300,
+  "units": "0.1 ns half-period error",
+  "scale_counts_per_ns": 10,
+  "weighting_applied": false,
+  "overflow_policy": "saturate",
+  "nan_value": -2147483648
+}
+```
+
+| Capture | Import type | Identification |
+| --- | --- | --- |
+| Earlier fork builds | Signed 16-bit, little-endian, mono | No format sidecar was produced. Use the producing build/capture records. |
+| Current build | Signed 32-bit, little-endian, mono | Companion JSON has `format_version: 2` and `sample_format: signed-int32-le`. |
+
+Both use the same filename, units, and nominal import rates, but the current raw
+file uses twice as much space for the same sample count. **Do not infer the
+format from file size or `.dat` extension.** If a sidecar is missing, establish
+the producing build before choosing the import width. Existing 16-bit captures
+are not converted by this change, and wrapped samples in them cannot be repaired
+simply by reinterpreting or widening their stored integers. Preserve the CSV
+reference/filter preamble alongside the raw data and sidecar when archiving.
