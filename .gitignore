@@ -13,6 +13,22 @@ Release/
 *.lib
 *.exp
 *.aps
+*.suo
+*.user
+*.sdf
+*.opensdf
+*.VC.db
+*.VC.VC.opendb
+.vs/
+ipch/
+
+# Measurement output (each Start replaces these files)
+WFGUI_log.txt
+WFGUI_wave.dat
+
+# Editor backup / merge files
+*~
+\#*\#
 
 # Local environment / OS cruft
 .env
