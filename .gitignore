@@ -1,6 +1,8 @@
 Debug/
 Release/
 *.exe
+# Deliberately shipped executable for Code > Download ZIP
+!/bin/wfgui.exe
 *.obj
 *.pdb
 *.ilk

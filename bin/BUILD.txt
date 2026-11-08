@@ -1,0 +1,15 @@
+WFGUI Windows executable - Release | Win32
+
+Source commit: 71a7f855d20ce419f4eab19495e831cd1a3b4ad5
+Build and tests: https://github.com/BaristaYU/wow-and-flutter-analyzer/actions/runs/42499015902
+Packaged release: https://github.com/BaristaYU/wow-and-flutter-analyzer/releases/tag/v2026.11.09
+
+This is the unchanged executable from that successful GitHub Actions build.
+Extract Code > Download ZIP and run bin/wfgui.exe, or use the Windows release ZIP.
+The executable is unsigned. SHA256SUMS.txt verifies file identity, not code signing or malware status.
+
+Original author: Alex Freed
+Upstream: https://github.com/sibiryakov/wow-and-flutter-analyzer
+Modified fork: BaristaYU
+Existing author notices remain in the application. No new license is granted;
+the repository and upstream have no explicit repository-wide LICENSE file.
