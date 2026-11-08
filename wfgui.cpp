@@ -47,7 +47,8 @@ BOOL CWfguiApp::InitInstance()
 	//  the specific initialization routines you do not need.
 
 
-	CWfguiDlg dlg;
+	SetRegistryKey(_T("WFGUI Custom"));
+    CWfguiDlg dlg;
 	m_pMainWnd = &dlg;
 	int nResponse = dlg.DoModal();
 	if (nResponse == IDOK)

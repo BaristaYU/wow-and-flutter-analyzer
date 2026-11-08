@@ -50,6 +50,8 @@ public:
 	CButton	m_radio05;
 	CString	m_status;
 	CString	m_freq;
+    CString m_speedDelta;
+    CString m_saveFolder;
 	CString	m_rms;
 	CString	m_filter_type;
 	CString	m_peak;
@@ -82,6 +84,8 @@ protected:
 	afx_msg void OnPaint();
 	afx_msg HCURSOR OnQueryDragIcon();
 	afx_msg void OnTimer(UINT nIDEvent);
+    afx_msg HBRUSH OnCtlColor(CDC* pDC, CWnd* pWnd, UINT nCtlColor);
+    afx_msg void OnSelectFolder();
 	afx_msg void OnRadio1();
 	afx_msg void OnRadio2();
 	afx_msg void OnRadio3();
@@ -109,7 +113,7 @@ public:
 	CEdit m_RMS_box;
 	//CButton
 	CLedButton m_OK_LED;
-	bool m_log;
+	BOOL m_log;
 };
 
 //{{AFX_INSERT_LOCATION}}

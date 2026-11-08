@@ -4,6 +4,7 @@
 #include "stdafx.h"
 #include "wfgui.h"
 #include "wfguiDlg.h"
+#include <afxdlgs.h>
 
 
 #include <sys/types.h>
@@ -117,6 +118,7 @@ CWfguiDlg::CWfguiDlg(CWnd* pParent /*=NULL*/)
 	//{{AFX_DATA_INIT(CWfguiDlg)
 	m_status = _T("");
 	m_freq = _T("");
+    m_speedDelta = _T("--.--%");
 	m_rms = _T("");
 	m_filter_type = _T("");
 	//m_peak = _T("");
@@ -138,11 +140,13 @@ void CWfguiDlg::DoDataExchange(CDataExchange* pDX)
 	DDX_Control(pDX, IDC_RADIO2, m_radio05);
 	DDX_Text(pDX, IDC_STATUS, m_status);
 	DDX_Text(pDX, IDC_FREQ, m_freq);
+    DDX_Text(pDX, IDC_SPEED_DELTA, m_speedDelta);
 	DDX_Text(pDX, IDC_RMS, m_rms);
 	DDX_Text(pDX, IDC_MAX, m_max_10_sec);
 	DDX_CBString(pDX, IDC_FILTER_TYPE, m_filter_type);
 	//DDX_Text(pDX, IDC_PEAK, m_peak);
 	DDX_Check(pDX, IDC_FILTER, m_savefile);
+    DDX_Check(pDX, IDC_CHECK1, m_log);
 	DDX_Control(pDX, IDC_NEEDLE, m_3DMeterCtrl);
 	//}}AFX_DATA_MAP
 	DDX_Control(pDX, IDC_RADIO4, m_radio30);
@@ -158,6 +162,7 @@ BEGIN_MESSAGE_MAP(CWfguiDlg, CDialog)
 	ON_WM_PAINT()
 	ON_WM_QUERYDRAGICON()
 	ON_WM_TIMER()
+    ON_WM_CTLCOLOR()
 	ON_BN_CLICKED(IDC_RADIO1, OnRadio1)
 	ON_BN_CLICKED(IDC_RADIO2, OnRadio2)
 	ON_BN_CLICKED(IDC_RADIO3, OnRadio3)
@@ -168,10 +173,74 @@ BEGIN_MESSAGE_MAP(CWfguiDlg, CDialog)
 	//}}AFX_MSG_MAP
 	ON_BN_CLICKED(IDC_RADIO4, OnBnClickedRadio4)
 	ON_BN_CLICKED(IDC_RADIO5, OnBnClickedRadio5)
+    ON_BN_CLICKED(IDC_SELECT_FOLDER, OnSelectFolder)
 END_MESSAGE_MAP()
 
 /////////////////////////////////////////////////////////////////////////////
 // CWfguiDlg message handlers
+
+
+HBRUSH CWfguiDlg::OnCtlColor(
+    CDC* pDC,
+    CWnd* pWnd,
+    UINT nCtlColor)
+{
+    HBRUSH brush = CDialog::OnCtlColor(
+        pDC, pWnd, nCtlColor);
+
+    if (pWnd->GetDlgCtrlID() == IDC_SPEED_DELTA)
+    {
+        COLORREF color = RGB(70, 70, 70);
+
+        if (m_speedDelta.Left(2) == _T("--"))
+        {
+            color = RGB(70, 70, 70);
+        }
+        else if (!m_speedDelta.IsEmpty())
+        {
+            if (m_speedDelta[0] == '-')
+                color = RGB(210, 35, 35);
+            else if (m_speedDelta[0] == '+')
+                color = RGB(0, 145, 65);
+        }
+
+        pDC->SetTextColor(color);
+        pDC->SetBkMode(TRANSPARENT);
+    }
+
+    return brush;
+}
+
+
+void CWfguiDlg::OnSelectFolder()
+{
+    CFolderPickerDialog picker(m_saveFolder, 0, this);
+
+    if (picker.DoModal() != IDOK)
+        return;
+
+    CString selected = picker.GetPathName();
+
+    DWORD attributes = GetFileAttributes(selected);
+
+    if (attributes == INVALID_FILE_ATTRIBUTES ||
+        !(attributes & FILE_ATTRIBUTE_DIRECTORY))
+    {
+        AfxMessageBox(_T("Invalid output folder."));
+        return;
+    }
+
+    m_saveFolder = selected;
+
+    AfxGetApp()->WriteProfileString(
+        _T("Settings"),
+        _T("SaveFolder"),
+        m_saveFolder
+    );
+
+    SetDlgItemText(IDC_FOLDER_PATH, m_saveFolder);
+}
+
 
 BOOL CWfguiDlg::OnInitDialog()
 {
@@ -208,6 +277,27 @@ BOOL CWfguiDlg::OnInitDialog()
 	// TODO: Add extra initialization here
 	m_freq_display.SetFont(myFont);
 	m_RMS_box.SetFont(myFont);
+
+    // Match frequency deviation font with frequency display.
+    GetDlgItem(IDC_SPEED_DELTA)->SetFont(myFont);
+
+    // Load the last selected output directory.
+    TCHAR modulePath[MAX_PATH] = {0};
+    GetModuleFileName(NULL, modulePath, MAX_PATH);
+
+    CString defaultFolder(modulePath);
+    int slash = defaultFolder.ReverseFind(_T('\\'));
+
+    if (slash >= 0)
+        defaultFolder = defaultFolder.Left(slash);
+
+    m_saveFolder = AfxGetApp()->GetProfileString(
+        _T("Settings"),
+        _T("SaveFolder"),
+        defaultFolder
+    );
+
+    SetDlgItemText(IDC_FOLDER_PATH, m_saveFolder);
 	//IDC_FREQ
 	CheckRadioButton(IDC_RADIO5,IDC_RADIO6,IDC_RADIO6);
 	m_OK_LED.SetImage(IDB_BITMAP1 /* IDB_LEDBUTTON_GREEN*/, 15 );
@@ -242,7 +332,8 @@ BOOL CWfguiDlg::OnInitDialog()
 
   m_3DMeterCtrl.SetRange(0.0, 0.4);
 
-  m_radio05.SetCheck(1);
+  m_radio10.SetCheck(1);
+    OnRadio3();
 
 #if 0
 	CRect rct(15,400,560,600);
@@ -343,6 +434,26 @@ FILE *outf;
 
 double RMS_sums[10];
 int current_buffer; // 0 to 9
+
+// CSV log state: each WAVEHDR contains 0.1 s of 44100 Hz audio.
+// The time column is based on captured audio frames, not GUI scheduling.
+static ULONGLONG g_logCapturedFrames = 0;
+static double g_logPeriodNs[10] = {0};
+static double g_logSquares[10] = {0};
+static int g_logCrossings[10] = {0};
+static int g_logValidBlocks = 0;
+
+static void ResetLogHistory()
+{
+    for (int i = 0; i < 10; ++i)
+    {
+        g_logPeriodNs[i] = 0.0;
+        g_logSquares[i] = 0.0;
+        g_logCrossings[i] = 0;
+    }
+    g_logValidBlocks = 0;
+}
+
 
 
 LRESULT CWfguiDlg::OnMyMessage(WPARAM wParam, LPARAM lParam)
@@ -470,6 +581,7 @@ void CWfguiDlg::OnButton1() //STOP
 	Sleep(200);
 
 	GetDlgItem(IDC_BUTTON2)->EnableWindow(TRUE);
+    GetDlgItem(IDC_SELECT_FOLDER)->EnableWindow(TRUE);
 	if(outf > 0){
 		fclose(outf);
 		outf = NULL;
@@ -498,6 +610,7 @@ void CWfguiDlg::OnButton2() // START
 	GetDlgItem(IDC_FILTER_TYPE)->EnableWindow(FALSE);
 	GetDlgItem(IDC_BUTTON2)->EnableWindow(FALSE);
 	GetDlgItem(IDC_BUTTON1)->EnableWindow(TRUE);
+    GetDlgItem(IDC_SELECT_FOLDER)->EnableWindow(FALSE);
 	int filter_sel = m_filter_combo.GetCurSel();
 	m_filter_combo.GetLBText(filter_sel, m_filter_type);
 
@@ -508,6 +621,8 @@ void CWfguiDlg::OnButton2() // START
 	running = 1;
 	first_buffer = 1;
 	current_buffer = 0;
+    g_logCapturedFrames = 0;
+    ResetLogHistory();
 
 	summ = 0.0;
 	average = 0.0;
@@ -526,11 +641,63 @@ void CWfguiDlg::OnButton2() // START
 	nanosec_per_sample = 10e8 / 44100;
 
 
-	if(m_savefile)
-			outf = fopen("WF_out.dat","wb");
+	outf = NULL;
+    fp_log = NULL;
 
-	if(m_log)
-			fp_log = fopen("log.txt","w");
+    if (m_savefile)
+    {
+        CString wavePath = m_saveFolder + _T("\\WFGUI_wave.dat");
+        outf = fopen((LPCTSTR)wavePath, "wb");
+    }
+
+    if (m_log)
+    {
+        CString logPath = m_saveFolder + _T("\\WFGUI_log.txt");
+        fp_log = fopen((LPCTSTR)logPath, "w");
+        if (fp_log != NULL)
+        {
+            const int referenceHz = IsDlgButtonChecked(IDC_RADIO5) ? 3000 : 3150;
+            fprintf(fp_log, "# WFGUI measurement log\n");
+            fprintf(fp_log, "# Reference: %d Hz\n", referenceHz);
+            fprintf(fp_log, "# Weighting: %s\n", (LPCSTR)m_filter_type);
+            fprintf(fp_log, "# Log interval: 0.1 s (4410 captured frames)\n");
+            fprintf(fp_log, "# freq_0p1s_hz: each 0.1-second audio block\n");
+            fprintf(fp_log, "# freq_1s_hz and rms_1s_pct: rolling 10 blocks\n");
+            fprintf(fp_log, "# speed_error_pct: (freq_1s_hz / reference - 1) * 100\n");
+            fprintf(fp_log, "# max_quasi_peak_10s_pct: max of the last 100 blocks\n");
+            fprintf(fp_log, "# Blank rolling values until 10 consecutive valid blocks\n");
+            fprintf(fp_log, "# time_s: seconds since WFGUI Start (includes silence)\n");
+            fprintf(fp_log, "# Invalid or startup 0.1s blocks are omitted\n");
+            fprintf(fp_log, "time_s,freq_0p1s_hz,freq_1s_hz,speed_error_pct,rms_1s_pct,max_quasi_peak_10s_pct\n");
+        }
+    }
+
+    // Do not start measurement if a requested file cannot be opened.
+    if ((m_savefile && outf == NULL) ||
+        (m_log && fp_log == NULL))
+    {
+        if (outf != NULL)
+        {
+            fclose(outf);
+            outf = NULL;
+        }
+
+        if (fp_log != NULL)
+        {
+            fclose(fp_log);
+            fp_log = NULL;
+        }
+
+        running = 0;
+
+        GetDlgItem(IDC_BUTTON2)->EnableWindow(TRUE);
+        GetDlgItem(IDC_BUTTON1)->EnableWindow(FALSE);
+        GetDlgItem(IDC_SELECT_FOLDER)->EnableWindow(TRUE);
+        GetDlgItem(IDC_FILTER_TYPE)->EnableWindow(TRUE);
+
+        AfxMessageBox(_T("Cannot write to selected output folder."));
+        return;
+    }
 
 	OpenDevice();	
 	PrepareBuffers();
@@ -552,7 +719,7 @@ int CWfguiDlg::FillDevices(void)
 		ZeroMemory(&stWIC,sizeof(WAVEINCAPS));
 		mRes=waveInGetDevCaps(nC1,&stWIC,sizeof(WAVEINCAPS));
 		if(mRes==0)
-			pBox->AddString(stWIC.szPname);
+			{ int idx = pBox->AddString(stWIC.szPname); if (idx != CB_ERR) pBox->SetItemData(idx, nC1); }
 //		else
 //			StoreError(mRes,TRUE,"File: %s ,Line Number:%d",__FILE__,__LINE__);
 	}
@@ -576,8 +743,8 @@ void CWfguiDlg::OnCbnSelchangeDevices()
 	if(nSel!=-1)
 	{
 		ZeroMemory(&stWIC,sizeof(WAVEINCAPS));
-		mRes=waveInGetDevCaps(nSel,&stWIC,sizeof(WAVEINCAPS));
-		res = (WAVE_FORMAT_4M16==(stWIC.dwFormats&WAVE_FORMAT_4M16));
+		mRes=waveInGetDevCaps((UINT)pDevices->GetItemData(nSel),&stWIC,sizeof(WAVEINCAPS));
+		res = (WAVE_FORMAT_4S16==(stWIC.dwFormats&WAVE_FORMAT_4S16));
 		if(res == 0)
 			AfxMessageBox("Format not supported by device");
 	}
@@ -617,15 +784,15 @@ void CWfguiDlg::OpenDevice()
 	
 	m_stWFEX.nSamplesPerSec=44100;
 	m_stWFEX.wBitsPerSample = 16;
-	m_stWFEX.nChannels=1;
+	m_stWFEX.nChannels=2;
 	m_stWFEX.wFormatTag=WAVE_FORMAT_PCM;
 	m_stWFEX.nBlockAlign=m_stWFEX.nChannels*m_stWFEX.wBitsPerSample/8;
 	m_stWFEX.nAvgBytesPerSec=m_stWFEX.nSamplesPerSec*m_stWFEX.nBlockAlign;
-	m_stWFEX.cbSize=sizeof(WAVEFORMATEX);
+	m_stWFEX.cbSize=0;
 
 
 	mRes=waveInOpen(&m_hWaveIn,
-		pDevices->GetCurSel(),
+		(UINT)pDevices->GetItemData(pDevices->GetCurSel()),
 		&m_stWFEX,
 		/*(DWORD_PTR)*/
 #if USE_MESSAGE
@@ -699,10 +866,14 @@ void CWfguiDlg::ProcessHeader(WAVEHDR *pHdr)
 	//TRACE("%d",pHdr->dwUser);
 	if(WHDR_DONE==(WHDR_DONE &pHdr->dwFlags))
 	{
+        g_logCapturedFrames += pHdr->dwBytesRecorded / m_stWFEX.nBlockAlign;
+        const bool logStartupBlock = (first_buffer != 0);
+        const double logPeriodStart = summ;
+        const int logCrossingsStart = good_samples;
 		max_val = 0;
 		zero_cross = 0;
 		for(i=0; i<4410; i++){
-			sample = *(short *)(pHdr->lpData + i*2);
+			sample = *(short *)(pHdr->lpData + i*4 + 2);
 			if(sample > max_val)
 				max_val = sample;
 
@@ -712,6 +883,7 @@ void CWfguiDlg::ProcessHeader(WAVEHDR *pHdr)
 		}
 
 		if(max_val < 50){
+            ResetLogHistory();
 			m_status = "Signal too low";
 			UpdateData(false);
 			mRes=waveInAddBuffer(m_hWaveIn,pHdr,sizeof(WAVEHDR));
@@ -720,9 +892,11 @@ void CWfguiDlg::ProcessHeader(WAVEHDR *pHdr)
 		}
 
 		if((zero_cross < min_crossings) || (zero_cross > max_crossings)){
+            ResetLogHistory();
 			mRes=waveInAddBuffer(m_hWaveIn,pHdr,sizeof(WAVEHDR));
 			//m_status.Format("%d Hz", zero_cross * 5);
 			m_freq.Format("%d Hz", zero_cross * 5);
+            m_speedDelta = _T("--.--%");
 			UpdateData(false);
 			m_OK_LED.Depress(false);
 			return;
@@ -732,7 +906,7 @@ void CWfguiDlg::ProcessHeader(WAVEHDR *pHdr)
 		m_OK_LED.Depress(true);
 
 		for(i=0; i<4410; i++){
-			sample = *(short *)(pHdr->lpData + i*2);
+			sample = *(short *)(pHdr->lpData + i*4 + 2);
 
 			d_in_val = double(sample);
 			d_out_val= process_2nd_order(d_in_val);
@@ -879,6 +1053,102 @@ void CWfguiDlg::ProcessHeader(WAVEHDR *pHdr)
 		if(++index_100 == 100)
 			index_100 = 0;
 
+        // Independent 0.1s logger, without changing the original GUI meter.
+        // Only complete, plausible tone blocks enter the rolling 1-second window.
+        const int logSlot = current_buffer;
+        const int logBlockCrossings = good_samples - logCrossingsStart;
+        const double logBlockPeriodNs = summ - logPeriodStart;
+
+        const double blockFreq =
+            (logBlockCrossings > 0 && logBlockPeriodNs > 0.0)
+                ? 1.0e9 * logBlockCrossings / (2.0 * logBlockPeriodNs)
+                : 0.0;
+
+        // 0.1s of 3150Hz should contain about 630 half-periods.
+        // Reject the first acquisition block and incomplete/bad blocks.
+        const double expectedCrossings = (double)center_freq / 5.0;
+        const bool validLogBlock =
+            !logStartupBlock &&
+            logBlockCrossings >= (int)(expectedCrossings * 0.8) &&
+            logBlockCrossings <= (int)(expectedCrossings * 1.2) &&
+            blockFreq >= center_freq * 0.95 &&
+            blockFreq <= center_freq * 1.05;
+
+        if (!validLogBlock)
+        {
+            // Never contaminate the first 1s estimate with partial data.
+            ResetLogHistory();
+        }
+        else
+        {
+            g_logPeriodNs[logSlot] = logBlockPeriodNs;
+            g_logSquares[logSlot] = sum_of_squares;
+            g_logCrossings[logSlot] = logBlockCrossings;
+            if (g_logValidBlocks < 10)
+                ++g_logValidBlocks;
+
+            if (m_log && fp_log != NULL)
+            {
+                // The capture clock includes silence before tape playback.
+                const double timeSeconds =
+                    (double)g_logCapturedFrames / (double)m_stWFEX.nSamplesPerSec;
+
+                double maxPeak10s = 0.0;
+                for (int j = 0; j < 100; ++j)
+                    if (max_peak_10sec[j] > maxPeak10s)
+                        maxPeak10s = max_peak_10sec[j];
+
+                double oneSecondPeriodNs = 0.0;
+                double oneSecondSquares = 0.0;
+                int oneSecondCrossings = 0;
+
+                if (g_logValidBlocks == 10)
+                {
+                    for (int j = 0; j < 10; ++j)
+                    {
+                        oneSecondPeriodNs += g_logPeriodNs[j];
+                        oneSecondSquares += g_logSquares[j];
+                        oneSecondCrossings += g_logCrossings[j];
+                    }
+                }
+
+                if (g_logValidBlocks == 10 &&
+                    oneSecondCrossings > 0 && oneSecondPeriodNs > 0.0)
+                {
+                    const double freq1s =
+                        1.0e9 * oneSecondCrossings / (2.0 * oneSecondPeriodNs);
+
+                    // A corrupt startup period must never appear as a
+                    // plausible health-check reading such as -39% speed.
+                    if (freq1s >= center_freq * 0.95 &&
+                        freq1s <= center_freq * 1.05)
+                    {
+                        const double speedErrorPct =
+                            (freq1s - center_freq) / center_freq * 100.0;
+                        const double rms1sPct =
+                            sqrt(oneSecondSquares / oneSecondCrossings) * 100.0;
+
+                        fprintf(fp_log, "%.2f,%.2f,%.2f,%+.4f,%.4f,%.4f\n",
+                                timeSeconds, blockFreq, freq1s,
+                                speedErrorPct, rms1sPct, maxPeak10s);
+                    }
+                    else
+                    {
+                        // Keep the valid 0.1s point; restart the 1s history.
+                        fprintf(fp_log, "%.2f,%.2f,,,,%.4f\n",
+                                timeSeconds, blockFreq, maxPeak10s);
+                        ResetLogHistory();
+                    }
+                }
+                else
+                {
+                    // Until 10 valid consecutive blocks are available,
+                    // preserve a correct 0.1s frequency but leave 1s fields blank.
+                    fprintf(fp_log, "%.2f,%.2f,,,,%.4f\n",
+                            timeSeconds, blockFreq, maxPeak10s);
+                }
+            }
+        }
 
 		if(++current_buffer == 10){
 			int i;
@@ -909,10 +1179,9 @@ void CWfguiDlg::ProcessHeader(WAVEHDR *pHdr)
 			summ = 0.0;
 			samples = 0;
 			m_freq.Format("%.1f", freq );
+            m_speedDelta.Format("%+.2f%%", (freq - center_freq) / center_freq * 100.0);
 
 
-			if(m_log && (fp_log > 0))
-				fprintf(fp_log, "%.1f %.4f %.4f\n", freq, max_RMS[index_100], max_peak_10);
 		}
 
 		m_LevelCtrl.SetPos(max_val);
